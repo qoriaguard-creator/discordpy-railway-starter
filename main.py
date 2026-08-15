@@ -69,8 +69,12 @@ async def hello(ctx):
 
 
 @bot.command()
-async def remind(ctx, member: discord.Member = None, time: str = None, *message):
-
+async def remind(
+    ctx,
+    member: discord.Member = None,
+    time: str = None,
+    *message
+):
     if member is None or time is None or not message:
         await ctx.send(
             "❌ გამოყენება:\n"
@@ -108,7 +112,6 @@ async def remind(ctx, member: discord.Member = None, time: str = None, *message)
 
 @bot.command()
 async def reminders(ctx):
-
     if not reminders:
         await ctx.send("📭 აქტიური Reminders არ გაქვს.")
         return
@@ -127,7 +130,6 @@ async def reminders(ctx):
 
 @bot.command()
 async def cancel(ctx, reminder_id: int = None):
-
     if reminder_id is None:
         await ctx.send(
             "❌ გამოიყენე: `!cancel 1`"
@@ -135,9 +137,7 @@ async def cancel(ctx, reminder_id: int = None):
         return
 
     for reminder in reminders:
-
         if reminder["id"] == reminder_id:
-
             reminders.remove(reminder)
             save_reminders()
 
@@ -150,5 +150,40 @@ async def cancel(ctx, reminder_id: int = None):
 
 
 async def reminder_loop():
+    await bot.wait_until_ready()
 
-    await bot.wait
+    while not bot.is_closed():
+        now = datetime.now(TIMEZONE)
+        current_time = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
+
+        changed = False
+
+        for reminder in reminders:
+            if reminder["time"] == current_time:
+                if reminder["last_sent"] != today:
+                    try:
+                        user = await bot.fetch_user(reminder["user_id"])
+
+                        await user.send(
+                            f"⏰ **Reminder**\n"
+                            f"📝 {reminder['message']}"
+                        )
+
+                        reminder["last_sent"] = today
+                        changed = True
+
+                    except Exception as e:
+                        log.error(
+                            "Could not send reminder #%s: %s",
+                            reminder["id"],
+                            e
+                        )
+
+        if changed:
+            save_reminders()
+
+        await asyncio.sleep(30)
+
+
+bot.run(TOKEN)
