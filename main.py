@@ -28,7 +28,7 @@ if not TOKEN:
 # Configure Gemini safely
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    ai_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+    ai_model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     log.warning("GEMINI_API_KEY is missing. AI features will be disabled.")
     ai_model = None
@@ -139,8 +139,8 @@ async def remind(
     )
 
 
-@bot.command()
-async def reminders(ctx):
+@bot.command(name="reminders")
+async def list_reminders(ctx):
     if not reminders:
         await ctx.send("📭 You have no active reminders.")
         return
@@ -216,4 +216,4 @@ async def reminder_loop():
 
 
 bot.run(TOKEN)
-                 
+    
