@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands
+import google.generativeai as genai
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,10 +18,20 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPERATOR_CHANNEL_ID = int(os.environ.get("OPERATOR_CHANNEL_ID", "0"))
 
 if not TOKEN:
     log.error("DISCORD_TOKEN is not set in Railway Variables.")
     sys.exit(1)
+
+# Configure Gemini safely
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    ai_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+else:
+    log.warning("GEMINI_API_KEY is missing. AI features will be disabled.")
+    ai_model = None
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -58,14 +69,32 @@ async def on_ready():
         bot.reminder_task = asyncio.create_task(reminder_loop())
 
 
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # AI Support in Operator Channel (if configured and not a command)
+    if ai_model and OPERATOR_CHANNEL_ID and message.channel.id == OPERATOR_CHANNEL_ID and not message.content.startswith("!"):
+        async with message.channel.typing():
+            try:
+                response = ai_model.generate_content(message.content)
+                await message.reply(response.text)
+            except Exception as e:
+                log.error(f"AI Error: {e}")
+                await message.reply(f"AI Error Details: {e}")
+
+    await bot.process_commands(message)
+
+
 @bot.command()
 async def ping(ctx):
-    await ctx.send(f"pong ({bot.latency * 1000:.0f} ms)")
+    await ctx.send(f"Pong! ({bot.latency * 1000:.0f} ms)")
 
 
 @bot.command()
 async def hello(ctx):
-    await ctx.send("Choo choo! 🚅")
+    await ctx.send("Choo choo! 🚅 Hello there!")
 
 
 @bot.command()
@@ -77,8 +106,8 @@ async def remind(
 ):
     if member is None or time is None or not message:
         await ctx.send(
-            "❌ გამოყენება:\n"
-            "`!remind @კლიენტი 20:00 2000-ის გადახდა`"
+            "❌ **Usage:**\n"
+            "`!remind @client 20:00 Your reminder message here`"
         )
         return
 
@@ -86,7 +115,7 @@ async def remind(
         datetime.strptime(time, "%H:%M")
     except ValueError:
         await ctx.send(
-            "❌ დრო უნდა იყოს HH:MM ფორმატში. მაგალითად: `20:00`"
+            "❌ Time must be in `HH:MM` format. Example: `20:00`"
         )
         return
 
@@ -102,21 +131,21 @@ async def remind(
     save_reminders()
 
     await ctx.send(
-        f"✅ **Reminder შექმნილია!**\n"
-        f"👤 კლიენტი: {member.mention}\n"
-        f"⏰ დრო: **{time}**\n"
-        f"📝 ტექსტი: **{' '.join(message)}**\n"
-        f"🔁 ყოველდღე"
+        f"✅ **Reminder successfully created!**\n"
+        f"👤 Client: {member.mention}\n"
+        f"⏰ Time: **{time}**\n"
+        f"📝 Message: **{' '.join(message)}**\n"
+        f"🔁 Repeats daily"
     )
 
 
 @bot.command()
 async def reminders(ctx):
     if not reminders:
-        await ctx.send("📭 აქტიური Reminders არ გაქვს.")
+        await ctx.send("📭 You have no active reminders.")
         return
 
-    text = "📋 **აქტიური Reminders:**\n\n"
+    text = "📋 **Active Reminders:**\n\n"
 
     for reminder in reminders:
         text += (
@@ -132,7 +161,7 @@ async def reminders(ctx):
 async def cancel(ctx, reminder_id: int = None):
     if reminder_id is None:
         await ctx.send(
-            "❌ გამოიყენე: `!cancel 1`"
+            "❌ **Usage:** `!cancel [reminder_id]` (Example: `!cancel 1`)"
         )
         return
 
@@ -142,11 +171,11 @@ async def cancel(ctx, reminder_id: int = None):
             save_reminders()
 
             await ctx.send(
-                f"🗑️ Reminder **#{reminder_id}** გაუქმებულია."
+                f"🗑️ Reminder **#{reminder_id}** has been cancelled."
             )
             return
 
-    await ctx.send("❌ ასეთი Reminder ვერ მოიძებნა.")
+    await ctx.send("❌ Reminder with such ID was not found.")
 
 
 async def reminder_loop():
@@ -166,7 +195,7 @@ async def reminder_loop():
                         user = await bot.fetch_user(reminder["user_id"])
 
                         await user.send(
-                            f"⏰ **Reminder**\n"
+                            f"⏰ **Reminder Notification**\n"
                             f"📝 {reminder['message']}"
                         )
 
@@ -187,3 +216,4 @@ async def reminder_loop():
 
 
 bot.run(TOKEN)
+                 
