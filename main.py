@@ -28,7 +28,7 @@ if not TOKEN:
 # Configure Gemini safely
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+    ai_model = genai.GenerativeModel('models/gemini-1.5-flash')
 else:
     log.warning("GEMINI_API_KEY is missing. AI features will be disabled.")
     ai_model = None
