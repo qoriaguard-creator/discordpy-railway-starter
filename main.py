@@ -94,7 +94,7 @@ async def ping(ctx):
 
 @bot.command()
 async def hello(ctx):
-    await ctx.send("Well... He- Hell- Hello Qoria... I can't re- Respond, Please Help m-!")
+    await ctx.send("Ple- Please... Do Something")
 
 
 @bot.command()
