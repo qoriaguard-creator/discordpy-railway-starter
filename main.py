@@ -472,7 +472,7 @@ async def investments_command(ctx):
     for inv in user_investments:
         tier_info = INVESTMENT_TIERS.get(inv["asset"], {"name": inv["asset"]})
         ready = current_timestamp >= inv["end_time"]
-        status_text = "✅ **Ready to Claim!** (`!claim " + str(inv["id"]) + "`)" if ready else f"⏳ Maturity: <t:{inv['end_time']}:R>"
+        status_text = f"✅ **Ready to Claim!** (`!claim {inv['id']}`)" if ready else f"⏳ Maturity: <t:{inv['end_time']}:R>"
         
         embed.add_field(
             name=f"ID #{inv['id']} | {tier_info['name']}",
@@ -545,4 +545,4 @@ async def expense_command(ctx, category: str = None, amount: float = None):
         "date": datetime.now(TIMEZONE).strftime("%Y-%m-%d %H:%M")
     })
     save_expenses_data()
-    await ctx.send(f"📝 Recorded expense: **{category}** — **{amount:.
+    await ctx.send(f"📝 Recorded expense: **{category}** — **{amount:.2f} {CURRE
