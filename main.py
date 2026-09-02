@@ -4,6 +4,7 @@ import sys
 import json
 import asyncio
 import platform
+import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -40,6 +41,7 @@ REMINDERS_FILE = "reminders.json"
 BACKUP_FILE = "reminders_backup.json"
 ECONOMY_FILE = "economy.json"
 EXPENSES_FILE = "expenses.json"
+INVESTMENTS_FILE = "investments.json"
 
 TIMEZONE = ZoneInfo("Asia/Tbilisi")
 BOT_START_TIME = datetime.now(TIMEZONE)
@@ -51,13 +53,13 @@ CURRENCY_SYMBOL = "₾"  # ლარი / ეკონომიკური ნ�
 def load_json_file(filename: str) -> dict | list:
     """Universal loader for JSON storage files with safe fallbacks."""
     if not os.path.exists(filename):
-        return {} if filename == ECONOMY_FILE else []
+        return {} if filename in [ECONOMY_FILE, INVESTMENTS_FILE] else []
     try:
         with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         log.error(f"Error loading {filename}: {e}")
-        return {} if filename == ECONOMY_FILE else []
+        return {} if filename in [ECONOMY_FILE, INVESTMENTS_FILE] else []
 
 
 def save_json_file(filename: str, data):
@@ -70,8 +72,9 @@ def save_json_file(filename: str, data):
 
 
 reminders = load_json_file(REMINDERS_FILE)
-economy_data = load_json_file(ECONOMY_FILE)  # Format: {str(user_id): {"balance": 100, "last_daily": "YYYY-MM-DD", "last_work": timestamp}}
-expenses_data = load_json_file(EXPENSES_FILE)  # Format: {str(user_id): [{"category": "Food", "amount": 25, "date": "..."}]}
+economy_data = load_json_file(ECONOMY_FILE)      # Format: {str(user_id): {"balance": 100, "last_daily": "...", "last_work": ...}}
+expenses_data = load_json_file(EXPENSES_FILE)    # Format: {str(user_id): [{"category": "...", "amount": 25, "date": "..."}]}
+investments_data = load_json_file(INVESTMENTS_FILE) # Format: {str(user_id): [{"id": 1, "asset": "crypto", "amount": 100, "end_time": timestamp}]}
 
 
 def save_reminders_data():
@@ -83,6 +86,9 @@ def save_economy_data():
 
 def save_expenses_data():
     save_json_file(EXPENSES_FILE, expenses_data)
+
+def save_investments_data():
+    save_json_file(INVESTMENTS_FILE, investments_data)
 
 
 def get_user_account(user_id: int) -> dict:
@@ -202,13 +208,14 @@ async def helpbot_command(ctx):
     """Displays comprehensive interactive command documentation."""
     embed = discord.Embed(
         title="🤖 Enterprise Bot - Help Panel",
-        description="List of all available reminder and financial commands:",
+        description="List of all available reminder, financial, and investment commands:",
         color=discord.Color.purple(),
         timestamp=datetime.now(TIMEZONE)
     )
     
     embed.add_field(name="⏰ Reminders", value="`!remind @user HH:MM msg`\n`!reminders`\n`!cancel [ID]`", inline=False)
     embed.add_field(name="💰 Economy & Money", value="`!balance` | `!bal`\n`!daily`\n`!work`\n`!pay @user amount`\n`!leaderboard` | `!rich`", inline=False)
+    embed.add_field(name="📈 Investments (NEW)", value="`!invest_types`\n`!invest [asset] [amount]`\n`!investments`\n`!claim [ID]`", inline=False)
     embed.add_field(name="📊 Expenses Tracker", value="`!expense [category] [amount]`\n`!expenses`", inline=False)
     embed.add_field(name="🛠️ System", value="`!ping` | `!sysinfo` | `!currency`", inline=False)
     
@@ -240,17 +247,16 @@ async def sysinfo_command(ctx):
 async def currency_command(ctx):
     embed = discord.Embed(
         title="💱 Currency Information",
-        description=f"Active system currency symbol: **{CURRENCY_SYMBOL}**\nUse `!balance` to check your funds, `!work` to earn money, and `!daily` to claim daily rewards.",
+        description=f"Active system currency symbol: **{CURRENCY_SYMBOL}**\nUse `!balance` to check your funds, `!work` to earn money, and `!invest` to grow capital.",
         color=discord.Color.gold()
     )
     await ctx.send(embed=embed)
 
 
-# --- 10 NEW ECONOMY & MONEY COMMANDS ---
+# --- ECONOMY & MONEY COMMANDS ---
 
 @bot.command(name="balance", aliases=["bal"])
 async def balance_command(ctx, member: discord.Member = None):
-    """1. Checks balance for yourself or another user."""
     target = member or ctx.author
     acc = get_user_account(target.id)
     
@@ -264,7 +270,6 @@ async def balance_command(ctx, member: discord.Member = None):
 
 @bot.command(name="daily")
 async def daily_command(ctx):
-    """2. Claims daily free bonus money."""
     acc = get_user_account(ctx.author.id)
     today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
 
@@ -287,7 +292,6 @@ async def daily_command(ctx):
 
 @bot.command(name="work")
 async def work_command(ctx):
-    """3. Works to earn money (with cooldown check)."""
     acc = get_user_account(ctx.author.id)
     current_timestamp = int(datetime.now().timestamp())
     cooldown = 3600  # 1 hour cooldown
@@ -297,7 +301,6 @@ async def work_command(ctx):
         await ctx.send(f"⏳ You are tired! You can work again in **{remaining} minutes**.")
         return
 
-    import random
     earned = round(random.uniform(10.0, 35.0), 2)
     acc["balance"] += earned
     acc["last_work"] = current_timestamp
@@ -313,7 +316,6 @@ async def work_command(ctx):
 
 @bot.command(name="pay")
 async def pay_command(ctx, member: discord.Member = None, amount: float = None):
-    """4. Transfers money from your account to another user."""
     if member is None or amount is None or amount <= 0:
         await ctx.send("❌ **Usage:** `!pay @user amount` (e.g., `!pay @John 25`)")
         return
@@ -328,7 +330,6 @@ async def pay_command(ctx, member: discord.Member = None, amount: float = None):
         return
 
     receiver_acc = get_user_account(member.id)
-
     sender_acc["balance"] -= amount
     receiver_acc["balance"] += amount
     save_economy_data()
@@ -343,13 +344,11 @@ async def pay_command(ctx, member: discord.Member = None, amount: float = None):
 
 @bot.command(name="leaderboard", aliases=["rich"])
 async def leaderboard_command(ctx):
-    """5. Displays top 10 richest users on the server."""
     if not economy_data:
         await ctx.send("📭 Economy registry is empty.")
         return
 
     sorted_users = sorted(economy_data.items(), key=lambda x: x[1]["balance"], reverse=True)[:10]
-
     embed = discord.Embed(title="🏆 Server Wealth Leaderboard (Top 10)", color=discord.Color.gold())
     
     desc = ""
@@ -365,7 +364,6 @@ async def leaderboard_command(ctx):
 @bot.command(name="addmoney")
 @commands.has_permissions(administrator=True)
 async def addmoney_command(ctx, member: discord.Member = None, amount: float = None):
-    """6. Admin command to add money to user account."""
     if member is None or amount is None or amount <= 0:
         await ctx.send("❌ **Usage:** `!addmoney @user amount`")
         return
@@ -373,14 +371,12 @@ async def addmoney_command(ctx, member: discord.Member = None, amount: float = N
     acc = get_user_account(member.id)
     acc["balance"] += amount
     save_economy_data()
-
-    await ctx.send(f"✅ Added **{amount:.2f} {CURRENCY_SYMBOL}** to {member.mention}'s account. New balance: **{acc['balance']:.2f} {CURRENCY_SYMBOL}**.")
+    await ctx.send(f"✅ Added **{amount:.2f} {CURRENCY_SYMBOL}** to {member.mention}'s account.")
 
 
 @bot.command(name="removemoney")
 @commands.has_permissions(administrator=True)
 async def removemoney_command(ctx, member: discord.Member = None, amount: float = None):
-    """7. Admin command to remove money from user account."""
     if member is None or amount is None or amount <= 0:
         await ctx.send("❌ **Usage:** `!removemoney @user amount`")
         return
@@ -388,138 +384,156 @@ async def removemoney_command(ctx, member: discord.Member = None, amount: float 
     acc = get_user_account(member.id)
     acc["balance"] = max(0.0, acc["balance"] - amount)
     save_economy_data()
-
-    await ctx.send(f"✅ Removed **{amount:.2f} {CURRENCY_SYMBOL}** from {member.mention}'s account. New balance: **{acc['balance']:.2f} {CURRENCY_SYMBOL}**.")
-
-
-@bot.command(name="expense")
-async def expense_command(ctx, category: str = None, amount: float = None):
-    """8. Records a personal expense item."""
-    if category is None or amount is None or amount <= 0:
-        await ctx.send("❌ **Usage:** `!expense [category] [amount]` (e.g., `!expense Food 15.50`)")
-        return
-
-    uid = str(ctx.author.id)
-    if uid not in expenses_data:
-        expenses_data[uid] = []
-
-    expense_entry = {
-        "category": category,
-        "amount": amount,
-        "date": datetime.now(TIMEZONE).strftime("%Y-%m-%d %H:%M")
-    }
-
-    expenses_data[uid].append(expense_entry)
-    save_expenses_data()
-
-    await ctx.send(f"📝 Recorded expense: **{category}** — **{amount:.2f} {CURRENCY_SYMBOL}**.")
+    await ctx.send(f"✅ Removed **{amount:.2f} {CURRENCY_SYMBOL}** from {member.mention}'s account.")
 
 
-@bot.command(name="expenses")
-async def expenses_command(ctx):
-    """9. Lists your recorded expenses."""
-    uid = str(ctx.author.id)
-    user_expenses = expenses_data.get(uid, [])
+# --- 📈 NEW INVESTMENT SYSTEM COMMANDS ---
 
-    if not user_expenses:
-        await ctx.send("📭 You have no recorded expenses.")
-        return
+# Available investment tiers configuration
+INVESTMENT_TIERS = {
+    "deposit": {"name": "Safe Deposit (უსაფრთხო)", "min": 50, "duration": 300, "return_min": 1.05, "return_max": 1.15},  # 5 mins for testing (or scale up)
+    "startup": {"name": "Startup Business (სტარტაპი)", "min": 200, "duration": 600, "return_min": 0.85, "return_max": 1.40},
+    "crypto":  {"name": "Crypto Exchange (კრიპტო ბირჟა)", "min": 500, "duration": 900, "return_min": 0.50, "return_max": 2.00}
+}
 
-    embed = discord.Embed(title=f"📊 Expenses for {ctx.author.display_name}", color=discord.Color.red())
-    total = 0.0
-    desc = ""
-
-    for exp in user_expenses[-10:]:  # Last 10 expenses
-        desc += f"• **{exp['category']}**: {exp['amount']:.2f} {CURRENCY_SYMBOL} *({exp['date']})*\n"
-        total += exp["amount"]
-
-    embed.description = desc
-    embed.set_footer(text=f"Total Tracked Expenses: {total:.2f} {CURRENCY_SYMBOL}")
+@bot.command(name="invest_types")
+async def invest_types_command(ctx):
+    """Shows available investment types and risks."""
+    embed = discord.Embed(title="📈 Available Investment Portfolios", color=discord.Color.blue())
+    for key, info in INVESTMENT_TIERS.items():
+        embed.add_field(
+            name=f"`{key}` — {info['name']}",
+            value=f"• Min Amount: **{info['min']} {CURRENCY_SYMBOL}**\n• Lock Duration: **{info['duration']//60} mins**\n• Potential Return: **{int((info['return_min']-1)*100)}% to {int((info['return_max']-1)*100)}%**",
+            inline=False
+        )
     await ctx.send(embed=embed)
 
 
-@bot.command(name="resetexpenses")
-async def resetexpenses_command(ctx):
-    """10. Clears all your recorded personal expenses."""
+@bot.command(name="invest")
+async def invest_command(ctx, asset: str = None, amount: float = None):
+    """Invests money into a selected financial portfolio."""
+    if not asset or not amount or amount <= 0:
+        await ctx.send("❌ **Usage:** `!invest [asset] [amount]`\n*Example:* `!invest crypto 500`\n*Tip:* Use `!invest_types` to view portfolios.")
+        return
+
+    asset = asset.lower()
+    if asset not in INVESTMENT_TIERS:
+        await ctx.send("❌ Invalid asset type! Type `!invest_types` to see valid options.")
+        return
+
+    tier = INVESTMENT_TIERS[asset]
+    if amount < tier["min"]:
+        await ctx.send(f"❌ Minimum investment for **{tier['name']}** is **{tier['min']} {CURRENCY_SYMBOL}**.")
+        return
+
+    acc = get_user_account(ctx.author.id)
+    if acc["balance"] < amount:
+        await ctx.send(f"❌ Insufficient funds! You have **{acc['balance']:.2f} {CURRENCY_SYMBOL}**.")
+        return
+
+    # Deduct funds from balance
+    acc["balance"] -= amount
+    save_economy_data()
+
     uid = str(ctx.author.id)
-    if uid in expenses_data:
-        expenses_data[uid] = []
-        save_expenses_data()
-        await ctx.send("🗑️ Your personal expense registry has been cleared.")
-    else:
-        await ctx.send("📭 You don't have any recorded expenses.")
+    if uid not in investments_data:
+        investments_data[uid] = []
 
+    # Generate unique investment ID
+    all_inv_ids = [inv["id"] for user_invs in investments_data.values() for inv in user_invs]
+    new_inv_id = max(all_inv_ids, default=0) + 1
 
-# --- REMINDER COMMANDS ---
+    current_timestamp = int(datetime.now(TIMEZONE).timestamp())
+    end_time = current_timestamp + tier["duration"]
 
-@bot.command(name="remind")
-async def remind_command(ctx, member: discord.Member = None, time_str: str = None, *, message: str = None):
-    if member is None or time_str is None or not message:
-        await ctx.send("❌ **Usage:** `!remind @user 14:30 Your message here`")
-        return
-
-    try:
-        parsed_time = datetime.strptime(time_str, "%H:%M")
-        formatted_time = parsed_time.strftime("%H:%M")
-    except ValueError:
-        await ctx.send("❌ Error: Time must follow `HH:MM` format.")
-        return
-
-    new_id = max([r["id"] for r in reminders], default=0) + 1
-    reminder_entry = {
-        "id": new_id,
-        "user_id": member.id,
-        "time": formatted_time,
-        "message": message,
-        "last_sent": None
+    investment_entry = {
+        "id": new_inv_id,
+        "asset": asset,
+        "amount": amount,
+        "end_time": end_time
     }
 
-    reminders.append(reminder_entry)
-    save_reminders_data()
+    investments_data[uid].append(investment_entry)
+    save_investments_data()
 
-    view = ReminderInteractiveView(new_id)
-    embed = discord.Embed(title="✅ Reminder Created", color=discord.Color.teal())
-    embed.add_field(name="ID", value=f"#{new_id}", inline=True)
-    embed.add_field(name="User", value=member.mention, inline=True)
-    embed.add_field(name="Time", value=formatted_time, inline=True)
-    embed.add_field(name="Message", value=message, inline=False)
-    await ctx.send(embed=embed, view=view)
+    embed = discord.Embed(
+        title="📈 Investment Successfully Placed!",
+        description=f"You invested **{amount:.2f} {CURRENCY_SYMBOL}** into **{tier['name']}**.",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="Investment ID", value=f"#{new_inv_id}", inline=True)
+    embed.add_field(name="Maturity Time", value=f"<t:{end_time}:R>", inline=True)
+    await ctx.send(embed=embed)
 
 
-@bot.command(name="reminders")
-async def list_reminders_command(ctx):
-    if not reminders:
-        await ctx.send("📭 No active reminders.")
+@bot.command(name="investments")
+async def investments_command(ctx):
+    """Lists your active investments and statuses."""
+    uid = str(ctx.author.id)
+    user_investments = investments_data.get(uid, [])
+
+    if not user_investments:
+        await ctx.send("📭 You have no active investments. Use `!invest` to start.")
         return
 
-    await ctx.send(f"📋 **Active Reminders ({len(reminders)}):**")
-    for reminder in reminders:
-        view = ReminderInteractiveView(reminder["id"])
-        embed = discord.Embed(title=f"Reminder ID #{reminder['id']}", color=discord.Color.blurple())
-        embed.add_field(name="User", value=f"<@{reminder['user_id']}>", inline=True)
-        embed.add_field(name="Time", value=reminder['time'], inline=True)
-        embed.add_field(name="Message", value=reminder['message'], inline=False)
-        await ctx.send(embed=embed, view=view)
-
-
-@bot.command(name="cancel")
-async def cancel_command(ctx, reminder_id: int = None):
-    if reminder_id is None:
-        await ctx.send("❌ **Usage:** `!cancel [reminder_id]`")
-        return
-
-    global reminders
-    initial_count = len(reminders)
-    reminders = [r for r in reminders if r["id"] != reminder_id]
-
-    if len(reminders) < initial_count:
-        save_reminders_data()
-        await ctx.send(f"🗑️ Reminder **#{reminder_id}** cancelled successfully.")
-    else:
-        await ctx.send(f"❌ Reminder ID **#{reminder_id}** not found.")
-
-
-# 9. Execute Bot Instance
-if __name__ == "__main__":
-    bot.run(TOKEN)
+    current_timestamp = int(datetime.now(TIMEZONE).timestamp())
+    embed = discord.Embed(title=f"📈 Active Investments for {ctx.author.display_name}", color=discord.Color.purple())
     
+    for inv in user_investments:
+        tier_info = INVESTMENT_TIERS.get(inv["asset"], {"name": inv["asset"]})
+        ready = current_timestamp >= inv["end_time"]
+        status_text = "✅ **Ready to Claim!** (`!claim " + str(inv["id"]) + "`)" if ready else f"⏳ Maturity: <t:{inv['end_time']}:R>"
+        
+        embed.add_field(
+            name=f"ID #{inv['id']} | {tier_info['name']}",
+            value=f"Amount: **{inv['amount']:.2f} {CURRENCY_SYMBOL}**\nStatus: {status_text}",
+            inline=False
+        )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="claim")
+async def claim_command(ctx, investment_id: int = None):
+    """Claims returns from a matured investment."""
+    if investment_id is None:
+        await ctx.send("❌ **Usage:** `!claim [investment_id]`")
+        return
+
+    uid = str(ctx.author.id)
+    user_investments = investments_data.get(uid, [])
+
+    target_inv = None
+    for inv in user_investments:
+        if inv["id"] == investment_id:
+            target_inv = inv
+            break
+
+    if not target_inv:
+        await ctx.send(f"❌ Investment ID **#{investment_id}** not found in your portfolio.")
+        return
+
+    current_timestamp = int(datetime.now(TIMEZONE).timestamp())
+    if current_timestamp < target_inv["end_time"]:
+        await ctx.send(f"⏳ This investment has not matured yet! Ready <t:{target_inv['end_time']}:R>.")
+        return
+
+    # Remove investment from active list
+    user_investments = [inv for inv in user_investments if inv["id"] != investment_id]
+    investments_data[uid] = user_investments
+    save_investments_data()
+
+    # Calculate payout
+    tier = INVESTMENT_TIERS[target_inv["asset"]]
+    multiplier = random.uniform(tier["return_min"], tier["return_max"])
+    payout = round(target_inv["amount"] * multiplier, 2)
+    profit = round(payout - target_inv["amount"], 2)
+
+    acc = get_user_account(ctx.author.id)
+    acc["balance"] += payout
+    save_economy_data()
+
+    color = discord.Color.green() if profit >= 0 else discord.Color.red()
+    embed = discord.Embed(title="📊 Investment Matured & Claimed", color=color)
+    embed.add_field(name="Initial Capital", value=f"{target_inv['amount']:.2f} {CURRENCY_SYMBOL}", inline=True)
+    embed.add_field(name="Final Payout", value=f"{payout:.2f} {CURRENCY_SYMBOL}", inline=True)
+    embed.add_fiel
